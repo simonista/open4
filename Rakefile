@@ -3,14 +3,28 @@ This.author = "Ara T. Howard"
 This.email = "ara.t.howard@gmail.com"
 This.homepage = "https://github.com/ahoward/#{ This.lib }"
 
+task :license do
+  open('LICENSE', 'w'){|fd| fd.puts "Ruby"}
+end
 
 task :default do
   puts((Rake::Task.tasks.map{|task| task.name.gsub(/::/,':')} - ['default']).sort)
 end
 
 task :test do
+  run_tests!
+end
+
+namespace :test do
+  task(:unit){ run_tests!(:unit) }
+  task(:functional){ run_tests!(:functional) }
+  task(:integration){ run_tests!(:integration) }
+end
+
+def run_tests!(which = nil)
+  which ||= '**'
   test_dir = File.join(This.dir, "test")
-  test_glob ||= File.join(test_dir, "/**_test.rb")
+  test_glob ||= File.join(test_dir, "#{ which }/**_test.rb")
   test_rbs = Dir.glob(test_glob).sort
         
   div = ('=' * 119)
@@ -18,7 +32,7 @@ task :test do
 
   test_rbs.each_with_index do |test_rb, index|
     testno = index + 1
-    command = "#{ This.ruby } -rubygems -I ./lib -I ./test/support #{ test_rb }"
+    command = "#{ This.ruby } -rubygems -w -I ./lib -I ./test/lib #{ test_rb }"
 
     puts
     say(div, :color => :cyan, :bold => true)
@@ -79,6 +93,7 @@ task :gemspec do
   test_files  = "test/#{ lib }.rb" if File.file?("test/#{ lib }.rb")
   summary     = object.respond_to?(:summary) ? object.summary : "summary: #{ lib } kicks the ass"
   description = object.respond_to?(:description) ? object.description : "description: #{ lib } kicks the ass"
+  license     = object.respond_to?(:license) ? object.license : "Ruby"
 
   if This.extensions.nil?
     This.extensions = []
@@ -89,38 +104,51 @@ task :gemspec do
   end
   extensions = [extensions].flatten.compact
 
+  if This.dependencies.nil?
+    dependencies = []
+  else
+    case This.dependencies
+      when Hash
+        dependencies = This.dependencies.values
+      when Array
+        dependencies = This.dependencies
+    end
+  end
+
   template = 
     if test(?e, 'gemspec.erb')
       Template{ IO.read('gemspec.erb') }
     else
       Template {
         <<-__
-          ## #{ lib }.gemspec
+          ## <%= lib %>.gemspec
           #
 
           Gem::Specification::new do |spec|
-            spec.name = #{ lib.inspect }
-            spec.version = #{ version.inspect }
+            spec.name = <%= lib.inspect %>
+            spec.version = <%= version.inspect %>
             spec.platform = Gem::Platform::RUBY
-            spec.summary = #{ lib.inspect }
-            spec.description = #{ description.inspect }
+            spec.summary = <%= lib.inspect %>
+            spec.description = <%= description.inspect %>
+            spec.license = <%= license.inspect %>
 
-            spec.files =\n#{ files.sort.pretty_inspect }
-            spec.executables = #{ executables.inspect }
+            spec.files =\n<%= files.sort.pretty_inspect %>
+            spec.executables = <%= executables.inspect %>
             
             spec.require_path = "lib"
 
-            spec.test_files = #{ test_files.inspect }
+            spec.test_files = <%= test_files.inspect %>
 
-          ### spec.add_dependency 'lib', '>= version'
-          #### spec.add_dependency 'map'
+            <% dependencies.each do |lib_version| %>
+              spec.add_dependency(*<%= Array(lib_version).flatten.inspect %>)
+            <% end %>
 
-            spec.extensions.push(*#{ extensions.inspect })
+            spec.extensions.push(*<%= extensions.inspect %>)
 
-            spec.rubyforge_project = #{ This.rubyforge_project.inspect }
-            spec.author = #{ This.author.inspect }
-            spec.email = #{ This.email.inspect }
-            spec.homepage = #{ This.homepage.inspect }
+            spec.rubyforge_project = <%= This.rubyforge_project.inspect %>
+            spec.author = <%= This.author.inspect %>
+            spec.email = <%= This.email.inspect %>
+            spec.homepage = <%= This.homepage.inspect %>
           end
         __
       }
@@ -164,8 +192,8 @@ task :readme do
   end
 
   template = 
-    if test(?e, 'readme.erb')
-      Template{ IO.read('readme.erb') }
+    if test(?e, 'README.erb')
+      Template{ IO.read('README.erb') }
     else
       Template {
         <<-__
@@ -255,6 +283,12 @@ BEGIN {
     version = This.object.send(:version)
   end
   This.version = version
+
+# see if dependencies are export by the module
+#
+  if This.object.respond_to?(:dependencies)
+    This.dependencies = This.object.dependencies
+  end
 
 # we need to know the name of the lib an it's version
 #
